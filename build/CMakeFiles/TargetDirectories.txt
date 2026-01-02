@@ -1,0 +1,3 @@
+C:/Users/Neiv Gupta/source/repos/cuda-wildfire-simulator/build/CMakeFiles/wildfire_sim.dir
+C:/Users/Neiv Gupta/source/repos/cuda-wildfire-simulator/build/CMakeFiles/ALL_BUILD.dir
+C:/Users/Neiv Gupta/source/repos/cuda-wildfire-simulator/build/CMakeFiles/ZERO_CHECK.dir

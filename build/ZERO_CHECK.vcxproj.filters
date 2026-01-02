@@ -1,0 +1,13 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<Project ToolsVersion="17.0" xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
+  <ItemGroup>
+    <CustomBuild Include="C:\Users\Neiv Gupta\source\repos\cuda-wildfire-simulator\build\CMakeFiles\850fc675d1f48146f1c1b8e03bbdde43\generate.stamp.rule">
+      <Filter>CMake Rules</Filter>
+    </CustomBuild>
+  </ItemGroup>
+  <ItemGroup>
+    <Filter Include="CMake Rules">
+      <UniqueIdentifier>{2FE40DB6-FEEB-3BE7-BDBA-8C0819585188}</UniqueIdentifier>
+    </Filter>
+  </ItemGroup>
+</Project>
