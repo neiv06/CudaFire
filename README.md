@@ -159,7 +159,7 @@ Fuel models are assigned based on elevation:
 - High elevations → Timber (models 8-9)
 - Very low elevations → Water (non-burnable)
 
-## Issues Encountered During Development
+## Problems & Solutions Encountered During Development
 
 ### 1. CUDA Compiler Selection (LNK1181: cannot open kernel32.lib)
 
