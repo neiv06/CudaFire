@@ -2,7 +2,7 @@
 
 A GPU-accelerated wildfire spread simulator using CUDA and the Rothermel fire spread model. This project simulates how wildfires propagate across terrain based on fuel types, moisture content, slope, and wind conditions.
 
-![CUDA](https://img.shields.io/badge/CUDA-12.x-green.svg)
+![CUDA](https://img.shields.io/badge/CUDA-12.9-green.svg)
 ![C++](https://img.shields.io/badge/C++-17-blue.svg)
 ![Platform](https://img.shields.io/badge/Platform-Windows-lightgrey.svg)
 
