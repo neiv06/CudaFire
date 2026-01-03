@@ -77,8 +77,8 @@ __global__ void fireSpreadKernel(const TerrainCell * terrain, const SimCell * ce
 
         // Simple burnout model: residence time based on fuel load
         // Typical residence time is 1-10 minutes depending on fuel
-        float burnout_time = fuel.load * 200.0f;  // Empirical factor
-        burnout_time = fmaxf(60.0f, fminf(burnout_time, 600.0f));  // Clamp 1-10 min
+        float burnout_time = fuel.load * 2000.0f;  // Longer burn time
+        burnout_time = fmaxf(300.0f, fminf(burnout_time, 3600.0f));  // Clamp 5-60 min
 
         if (next.residence_time >= burnout_time) {
             next.state = BURNED;

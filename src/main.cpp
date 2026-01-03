@@ -76,6 +76,15 @@ int main(int argc, char** argv) {
     terrain_loader.generateSynthetic(GRID_WIDTH, GRID_HEIGHT, 500.0f, 300.0f);
     terrain_loader.calculateSlopeAspect();
 
+    // Debug: Check terrain at ignition point
+    const auto& terrain_data = terrain_loader.getTerrain();
+    int center_idx = (GRID_HEIGHT / 2) * GRID_WIDTH + (GRID_WIDTH / 2);
+    std::cout << "Debug - Center cell terrain:" << std::endl;
+    std::cout << "  Fuel model: " << (int)terrain_data[center_idx].fuel_model << std::endl;
+    std::cout << "  Fuel moisture: " << terrain_data[center_idx].fuel_moisture << std::endl;
+    std::cout << "  Elevation: " << terrain_data[center_idx].elevation << std::endl;
+    std::cout << "  Slope: " << terrain_data[center_idx].slope << std::endl;
+
     // Initialize simulation
     std::cout << "Initializing simulation..." << std::endl;
     SimulationGrid grid;
