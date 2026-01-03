@@ -97,7 +97,7 @@ int main(int argc, char** argv) {
     uploadTerrain(&grid, terrain_loader.getTerrain().data());
 
     // Set wind conditions and upload to GPU
-    WindField wind_field = { 5.0f, 270.0f };  // 5 m/s from the west
+    WindField wind_field = { 10.0f, 270.0f };  // 5 m/s from the west
     cudaMemcpy(grid.d_wind, &wind_field, sizeof(WindField), cudaMemcpyHostToDevice);
 
     // Set ignition point(s) - center of domain

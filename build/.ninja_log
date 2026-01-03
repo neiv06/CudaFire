@@ -45,3 +45,6 @@
 25	1490	7891026641646441	CMakeFiles/wildfire_sim.dir/src/simulation.cu.obj	1f1d796094332f13
 1491	1717	7891026656316284	CMakeFiles/wildfire_sim.dir/cmake_device_link.obj	d61046ae919d5e29
 1717	1845	7891026658568879	wildfire_sim.exe	b402df7195f906fa
+30	654	7891028463214903	CMakeFiles/wildfire_sim.dir/src/main.cpp.obj	2354db2d9d7b8e0f
+655	877	7891028469458532	CMakeFiles/wildfire_sim.dir/cmake_device_link.obj	d61046ae919d5e29
+877	1005	7891028471686022	wildfire_sim.exe	b402df7195f906fa
