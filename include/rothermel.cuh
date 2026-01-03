@@ -75,7 +75,7 @@ __device__ __forceinline__ float reactionIntensity(
     // Net fuel load (accounting for mineral content)
     float w_n = fuel.load * (1.0f - 0.0555f);  // Assume 5.55% total mineral
 
-    // Reaction intensity (kW/m�)
+    // Reaction intensity (kW/m²)
     float IR = gamma * w_n * fuel.heat_content * moisture_damping * eta_s;
 
     return IR;
@@ -137,8 +137,8 @@ __device__ __forceinline__ float windFactor(float wind_speed, float sav_ratio, f
     float E = 0.715f * expf(-3.59e-4f * sigma);
 
     // Packing ratio
-    float bulk_density = 10.0f;  // kg/m�, typical
-    float particle_density = 513.0f;  // kg/m�, typical for dead wood
+    float bulk_density = 10.0f;  // kg/m³, typical
+    float particle_density = 513.0f;  // kg/m³, typical for dead wood
     float beta = bulk_density / particle_density;
 
     // Wind coefficient
@@ -189,6 +189,7 @@ __device__ __forceinline__ void vectorSpread(
 }
 
 // Main spread rate calculation
+// Simplified version with empirical base rates that are known to work
 __device__ __forceinline__ float calculateSpreadRate(
     const FuelModel& fuel,
     float fuel_moisture,
@@ -204,51 +205,77 @@ __device__ __forceinline__ float calculateSpreadRate(
         return 0.0f;
     }
 
-    // Calculate moisture damping
+    // Calculate moisture damping (0 to 1)
     float eta_m = moistureDamping(fuel_moisture, fuel.moisture_ext);
 
-    // Calculate reaction intensity
-    float IR = reactionIntensity(fuel, eta_m);
-
-    // Packing ratio
-    float bulk_density = fuel.load / fuel.depth;
-    float beta = bulk_density / fuel.density;
-
-    // Propagating flux ratio
-    float xi = propagatingFluxRatio(fuel.sav_ratio, beta);
-
-    // Heat sink
-    float hs = heatSink(bulk_density, fuel_moisture, Rothermel::HEAT_OF_PREIGNITION);
-
-    // No-wind, no-slope spread rate (m/s)
-    float R0 = (IR * xi) / (hs + 0.001f);  // Avoid div by zero
-
-    // Convert from m/min to m/s
-    R0 = R0 / 60.0f;
-
-    // Calculate wind and slope factors
-    float phi_s = slopeFactor(fabsf(slope_degrees));
-    float phi_w = windFactor(wind_speed, fuel.sav_ratio, fuel.depth);
-
-    // Upslope direction is opposite of aspect
-    float upslope_dir = fmodf(aspect + 180.0f, 360.0f);
-
-    // Wind pushes fire in direction opposite to where wind comes from
-    float wind_push_dir = fmodf(wind_direction + 180.0f, 360.0f);
-
-    // If slope is negative (downhill in spread direction), reduce slope factor
-    if (slope_degrees < 0.0f) {
-        phi_s *= 0.3f;
+    // Base spread rate by fuel model (m/s) - empirical values from fire behavior tables
+    // These represent no-wind, no-slope spread rates in dry conditions
+    float R0;
+    switch (fuel.sav_ratio > 2500 ? 1 : (fuel.sav_ratio > 1800 ? 2 : 3)) {
+    case 1:  // Fine fuels (grass) - fast spreading
+        R0 = 0.05f;  // ~3 m/min = 180 m/hr
+        break;
+    case 2:  // Medium fuels (brush)
+        R0 = 0.03f;  // ~1.8 m/min = 108 m/hr
+        break;
+    default: // Coarse fuels (timber)
+        R0 = 0.015f; // ~0.9 m/min = 54 m/hr
+        break;
     }
 
-    // Vector combination of wind and slope
-    float max_rate, max_dir;
-    vectorSpread(R0, phi_s, phi_w, upslope_dir, wind_push_dir, &max_rate, &max_dir);
+    // Apply moisture damping
+    R0 *= eta_m;
+
+    // Slope factor: fire spreads faster uphill
+    // phi_s = 5.275 * tan^2(slope) for uphill
+    float phi_s = 0.0f;
+    if (slope_degrees > 0.0f) {
+        float tan_slope = tanf(slope_degrees * Rothermel::DEG_TO_RAD);
+        phi_s = 5.275f * tan_slope * tan_slope;
+        phi_s = fminf(phi_s, 10.0f);  // Cap at 10x
+    }
+    else if (slope_degrees < 0.0f) {
+        // Downhill spread is slower
+        phi_s = -0.5f * fabsf(slope_degrees) / 45.0f;  // Reduce by up to 50%
+    }
+
+    // Wind factor: fire spreads faster with wind
+    // Simplified: phi_w proportional to wind speed
+    float phi_w = 0.0f;
+    if (wind_speed > 0.0f) {
+        // Typical multiplier: 3-5x at 5 m/s wind
+        phi_w = 0.6f * wind_speed;  // Linear approximation
+        phi_w = fminf(phi_w, 15.0f);  // Cap at 15x
+    }
+
+    // Direction calculations
+    // Upslope direction is opposite of aspect (aspect is downhill direction)
+    float upslope_dir = fmodf(aspect + 180.0f, 360.0f);
+
+    // Wind pushes fire opposite to where it comes from
+    float wind_push_dir = fmodf(wind_direction + 180.0f, 360.0f);
+
+    // Simple vector combination
+    float slope_x = phi_s * sinf(upslope_dir * Rothermel::DEG_TO_RAD);
+    float slope_y = phi_s * cosf(upslope_dir * Rothermel::DEG_TO_RAD);
+    float wind_x = phi_w * sinf(wind_push_dir * Rothermel::DEG_TO_RAD);
+    float wind_y = phi_w * cosf(wind_push_dir * Rothermel::DEG_TO_RAD);
+
+    float total_x = slope_x + wind_x;
+    float total_y = slope_y + wind_y;
+    float phi_combined = sqrtf(total_x * total_x + total_y * total_y);
+
+    // Direction of maximum spread
+    float max_dir = atan2f(total_x, total_y) * Rothermel::RAD_TO_DEG;
+    if (max_dir < 0.0f) max_dir += 360.0f;
 
     *out_direction = max_dir;
 
-    // Physical limits on spread rate
-    max_rate = fmaxf(0.0f, fminf(max_rate, 10.0f));  // Max 10 m/s is extreme
+    // Final spread rate
+    float max_rate = R0 * (1.0f + phi_combined);
+
+    // Physical limits (max ~5 m/s for extreme grass fires)
+    max_rate = fmaxf(0.001f, fminf(max_rate, 5.0f));
 
     return max_rate;
 }

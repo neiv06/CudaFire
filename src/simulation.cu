@@ -91,7 +91,9 @@ __global__ void fireSpreadKernel(const TerrainCell * terrain, const SimCell * ce
     // Handle unburned cells - check if fire spreads to them
     if (current.state == UNBURNED) {
         // Check all 8 neighbors for burning cells
-        float max_arrival_rate = 0.0f;
+        float max_spread_rate = 0.0f;
+        float min_ignition_time = 1e30f;
+        bool should_ignite = false;
 
         for (int n = 0; n < 8; ++n) {
             int nx = x + NEIGHBOR_OFFSETS[n].x;
@@ -131,37 +133,45 @@ __global__ void fireSpreadKernel(const TerrainCell * terrain, const SimCell * ce
                 &spread_direction
             );
 
+            // Skip if no spread possible
+            if (spread_rate <= 0.0f) continue;
+
             // Adjust for direction - fire spreads faster in direction of max spread
             float angle_diff = fabsf(spread_direction - incoming_dir);
             if (angle_diff > 180.0f) angle_diff = 360.0f - angle_diff;
 
             // Elliptical spread model - reduce rate for off-axis spread
-            // Using simple cosine falloff for now
             float direction_factor = cosf(angle_diff * 3.14159265f / 180.0f);
             direction_factor = fmaxf(0.1f, direction_factor);  // Minimum 10% spread
 
             float adjusted_rate = spread_rate * direction_factor;
 
             // Time for fire to travel from neighbor to this cell
-            float travel_time = dist / (adjusted_rate + 0.001f);  // Avoid div by zero
+            float travel_time = dist / (adjusted_rate + 0.0001f);
 
-            // Check if fire can reach this cell within the timestep
-            float time_since_neighbor_ignition = current_time - neighbor.time_of_arrival;
+            // How long has the neighbor been burning?
+            float neighbor_burn_time = neighbor.residence_time;
 
-            if (time_since_neighbor_ignition >= travel_time) {
-                // Fire arrives from this neighbor
-                float arrival_rate = adjusted_rate;
-                if (arrival_rate > max_arrival_rate) {
-                    max_arrival_rate = arrival_rate;
+            // Calculate time for fire to travel from neighbor to this cell
+            travel_time = dist / adjusted_rate;
+
+            // Fire spreads when enough time has accumulated
+            // Add dt to include the current timestep being processed
+            float time_burning = (current_time + dt) - neighbor.time_of_arrival;
+
+            if (time_burning >= travel_time) {
+                should_ignite = true;
+                if (adjusted_rate > max_spread_rate) {
+                    max_spread_rate = adjusted_rate;
                 }
             }
         }
 
         // If fire arrives, ignite this cell
-        if (max_arrival_rate > 0.0f) {
+        if (should_ignite && max_spread_rate > 0.0f) {
             next.state = BURNING;
             next.time_of_arrival = current_time;
-            next.spread_rate = max_arrival_rate;
+            next.spread_rate = max_spread_rate;
             next.residence_time = 0.0f;
 
             // Calculate fireline intensity
@@ -170,12 +180,14 @@ __global__ void fireSpreadKernel(const TerrainCell * terrain, const SimCell * ce
                 moistureDamping(terr.fuel_moisture, fuel.moisture_ext)
             );
             next.fire_intensity = firelineIntensity(
-                max_arrival_rate,
+                max_spread_rate,
                 fuel.load * fuel.heat_content,
                 reaction_intensity
             );
         }
     }
+
+    cells_next[idx] = next;
 }
 
 // Count burning/burned cells kernel (uses atomic adds)

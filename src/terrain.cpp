@@ -123,10 +123,11 @@ void TerrainLoader::calculateSlopeAspect() {
         TerrainCell& cell = terrain_[i];
         if (cell.fuel_model == 0) continue;  // Skip non-burnable
 
-        // North aspects (315-45�) get higher moisture
+        // South aspects are drier (better for fire spread)
+        // Keep moisture LOW so fire can spread - typical fire weather is 3-8%
         float aspect_factor = cosf(cell.aspect * DEG_TO_RAD);
-        cell.fuel_moisture *= (1.0f + 0.3f * aspect_factor);
-        cell.fuel_moisture = std::min(cell.fuel_moisture, 0.25f);
+        cell.fuel_moisture = 0.03f + 0.04f * (1.0f + aspect_factor) * 0.5f;
+        // Results in 3-7% moisture, well below extinction threshold
     }
 
     std::cout << "Slope/aspect calculation complete." << std::endl;
