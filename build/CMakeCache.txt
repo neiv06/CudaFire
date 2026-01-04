@@ -45,6 +45,9 @@ CMAKE_CUDA_FLAGS_RELWITHDEBINFO:STRING=-Xcompiler=" -Zi -O2 -Ob1" -DNDEBUG
 //Libraries linked by default with all CUDA applications.
 CMAKE_CUDA_STANDARD_LIBRARIES:STRING=kernel32.lib user32.lib gdi32.lib winspool.lib shell32.lib ole32.lib oleaut32.lib uuid.lib comdlg32.lib advapi32.lib
 
+//CXX compiler
+CMAKE_CXX_COMPILER:FILEPATH=C:/Program Files/Microsoft Visual Studio/2022/Community/VC/Tools/MSVC/14.44.35207/bin/Hostx64/x64/cl.exe
+
 //Flags used by the CXX compiler during all build types.
 CMAKE_CXX_FLAGS:STRING=/DWIN32 /D_WINDOWS /GR /EHsc
 
@@ -430,6 +433,12 @@ CUDA_nvtx3_interop_LIBRARY:FILEPATH=CUDA_nvtx3_interop_LIBRARY-NOTFOUND
 //Path to a library.
 CUDA_pcsamplingutil_LIBRARY:FILEPATH=C:/Program Files/NVIDIA GPU Computing Toolkit/CUDA/v12.9/extras/CUPTI/lib64/pcsamplingutil.lib
 
+//Path to the GDAL include directory
+GDAL_INCLUDE_DIR:PATH=C:/OSGeo4W/include
+
+//Path to the GDAL library
+GDAL_LIBRARY:FILEPATH=C:/OSGeo4W/lib/gdal_i.lib
+
 //Value Computed by CMake
 WildfireSimulator_BINARY_DIR:STATIC=C:/Users/Neiv Gupta/source/repos/cuda-wildfire-simulator/build
 
@@ -474,6 +483,8 @@ CMAKE_CUDA_FLAGS_RELEASE-ADVANCED:INTERNAL=1
 CMAKE_CUDA_FLAGS_RELWITHDEBINFO-ADVANCED:INTERNAL=1
 //ADVANCED property for variable: CMAKE_CUDA_STANDARD_LIBRARIES
 CMAKE_CUDA_STANDARD_LIBRARIES-ADVANCED:INTERNAL=1
+//ADVANCED property for variable: CMAKE_CXX_COMPILER
+CMAKE_CXX_COMPILER-ADVANCED:INTERNAL=1
 //ADVANCED property for variable: CMAKE_CXX_FLAGS
 CMAKE_CXX_FLAGS-ADVANCED:INTERNAL=1
 //ADVANCED property for variable: CMAKE_CXX_FLAGS_DEBUG
@@ -734,4 +745,10 @@ CUDA_nvtx3_interop_LIBRARY-ADVANCED:INTERNAL=1
 CUDA_pcsamplingutil_LIBRARY-ADVANCED:INTERNAL=1
 //Details about finding CUDAToolkit
 FIND_PACKAGE_MESSAGE_DETAILS_CUDAToolkit:INTERNAL=[C:/Program Files/NVIDIA GPU Computing Toolkit/CUDA/v12.9/include;C:/Program Files/Microsoft Visual Studio/2022/Community/VC/Tools/MSVC/14.44.35207/bin/Hostx86/x86][C:/Program Files/NVIDIA GPU Computing Toolkit/CUDA/v12.9/lib/x64/cudart.lib][C:/Program Files/NVIDIA GPU Computing Toolkit/CUDA/v12.9/bin][v12.9.41()]
+//Details about finding GDAL
+FIND_PACKAGE_MESSAGE_DETAILS_GDAL:INTERNAL=[C:/OSGeo4W/lib/gdal_i.lib][C:/OSGeo4W/include][v3.12.1()]
+//ADVANCED property for variable: GDAL_INCLUDE_DIR
+GDAL_INCLUDE_DIR-ADVANCED:INTERNAL=1
+//ADVANCED property for variable: GDAL_LIBRARY
+GDAL_LIBRARY-ADVANCED:INTERNAL=1
 

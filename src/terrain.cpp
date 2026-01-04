@@ -5,6 +5,8 @@
 #include <fstream>
 #include <sstream>
 #include <iostream>
+#include <gdal_priv.h>
+#include <cpl_conv.h>
 
 // Constants
 constexpr float PI = 3.14159265358979323846f;
@@ -103,6 +105,145 @@ void TerrainLoader::generateSynthetic(int width, int height, float base_elevatio
     std::cout << "Terrain generation complete." << std::endl;
 }
 
+// Load elevation from GeoTIFF using GDAL
+bool TerrainLoader::loadElevation(const std::string& filepath) {
+    GDALAllRegister();
+
+    GDALDataset* dataset = (GDALDataset*)GDALOpen(filepath.c_str(), GA_ReadOnly);
+    if (dataset == nullptr) {
+        std::cerr << "Failed to open elevation file: " << filepath << std::endl;
+        return false;
+    }
+
+    width_ = dataset->GetRasterXSize();
+    height_ = dataset->GetRasterYSize();
+
+    std::cout << "Loading elevation: " << width_ << " x " << height_ << std::endl;
+
+    // Get geotransform
+    double geotransform[6];
+    if (dataset->GetGeoTransform(geotransform) == CE_None) {
+        origin_lon_ = geotransform[0];
+        origin_lat_ = geotransform[3];
+        pixel_scale_x_ = geotransform[1];
+        pixel_scale_y_ = geotransform[5];
+        // Calculate cell size in meters (approximate at this latitude)
+        cell_size_ = std::abs(pixel_scale_x_) * 111320.0f * cosf(origin_lat_ * DEG_TO_RAD);
+    }
+
+    std::cout << "  Origin: " << origin_lon_ << ", " << origin_lat_ << std::endl;
+    std::cout << "  Cell size: " << cell_size_ << " m" << std::endl;
+
+    // Allocate memory
+    terrain_.resize(width_ * height_);
+    elevation_raw_.resize(width_ * height_);
+
+    // Read elevation band
+    GDALRasterBand* band = dataset->GetRasterBand(1);
+    std::vector<float> buffer(width_ * height_);
+
+    CPLErr err = band->RasterIO(GF_Read, 0, 0, width_, height_,
+        buffer.data(), width_, height_,
+        GDT_Float32, 0, 0);
+
+    if (err != CE_None) {
+        std::cerr << "Failed to read elevation data" << std::endl;
+        GDALClose(dataset);
+        return false;
+    }
+
+    // Get nodata value
+    int hasNoData;
+    double nodata = band->GetNoDataValue(&hasNoData);
+
+    // Copy to terrain structure
+    for (int i = 0; i < width_ * height_; ++i) {
+        if (hasNoData && buffer[i] == nodata) {
+            elevation_raw_[i] = 0.0f;
+            terrain_[i].fuel_model = 0;  // Non-burnable
+        }
+        else {
+            elevation_raw_[i] = buffer[i];
+        }
+        terrain_[i].elevation = elevation_raw_[i];
+        terrain_[i].fuel_moisture = 0.05f;  // Default 5% moisture
+        terrain_[i].canopy_cover = 0.0f;
+    }
+
+    GDALClose(dataset);
+    std::cout << "Elevation loaded successfully" << std::endl;
+
+    return true;
+}
+
+// Load fuel model from GeoTIFF using GDAL
+bool TerrainLoader::loadFuelModel(const std::string& filepath) {
+    GDALAllRegister();
+
+    GDALDataset* dataset = (GDALDataset*)GDALOpen(filepath.c_str(), GA_ReadOnly);
+    if (dataset == nullptr) {
+        std::cerr << "Failed to open fuel model file: " << filepath << std::endl;
+        return false;
+    }
+
+    int fuel_width = dataset->GetRasterXSize();
+    int fuel_height = dataset->GetRasterYSize();
+
+    std::cout << "Loading fuel model: " << fuel_width << " x " << fuel_height << std::endl;
+
+    if (fuel_width != width_ || fuel_height != height_) {
+        std::cerr << "Warning: Fuel dimensions (" << fuel_width << "x" << fuel_height
+            << ") don't match elevation (" << width_ << "x" << height_ << ")" << std::endl;
+    }
+
+    // Read fuel model band
+    GDALRasterBand* band = dataset->GetRasterBand(1);
+    std::vector<int16_t> buffer(width_ * height_);
+
+    band->RasterIO(GF_Read, 0, 0, width_, height_,
+        buffer.data(), width_, height_,
+        GDT_Int16, 0, 0);
+
+    // Get nodata value
+    int hasNoData;
+    double nodata = band->GetNoDataValue(&hasNoData);
+
+    // Count fuel types for debug
+    int burnable = 0, nonburnable = 0;
+
+    // LANDFIRE FBFM13 codes:
+    // 1-13 = Anderson fuel models
+    // 91=water, 92=snow, 93=agriculture, 98=urban, 99=barren
+    // -9999 or other = nodata
+    for (int i = 0; i < width_ * height_; ++i) {
+        int16_t code = buffer[i];
+
+        if (code >= 1 && code <= 13) {
+            terrain_[i].fuel_model = static_cast<uint8_t>(code);
+            burnable++;
+        }
+        else if (code == 91 || code == 92 || code == 93 || code == 98 || code == 99) {
+            terrain_[i].fuel_model = 0;  // Non-burnable
+            nonburnable++;
+        }
+        else if ((hasNoData && code == (int16_t)nodata) || code == -9999 || code == 0) {
+            terrain_[i].fuel_model = 0;  // NoData = non-burnable
+            nonburnable++;
+        }
+        else {
+            // Unknown code, default to grass
+            terrain_[i].fuel_model = 1;
+            burnable++;
+        }
+    }
+
+    GDALClose(dataset);
+
+    std::cout << "Fuel model loaded: " << burnable << " burnable, "
+        << nonburnable << " non-burnable cells" << std::endl;
+
+    return true;
+}
 
 // Calculate slope and aspect from elevation
 void TerrainLoader::calculateSlopeAspect() {
@@ -180,23 +321,6 @@ void TerrainLoader::calcSlopeAspectAt(int x, int y) {
         cell.aspect = aspect_rad * RAD_TO_DEG;
         if (cell.aspect < 0.0f) cell.aspect += 360.0f;
     }
-}
-
-
-// Load elevation from GeoTIFF (stub - would use GDAL)
-bool TerrainLoader::loadElevation(const std::string& filepath) {
-    // TODO: Implement using GDAL
-    // For now, this is a placeholder
-    std::cerr << "GeoTIFF loading not yet implemented. "
-        << "Use generateSynthetic() for testing." << std::endl;
-    return false;
-}
-
-// Load fuel model grid (stub)
-bool TerrainLoader::loadFuelModel(const std::string& filepath) {
-    // TODO: Implement using GDAL
-    std::cerr << "Fuel model loading not yet implemented." << std::endl;
-    return false;
 }
 
 // Load fuel moisture (stub)

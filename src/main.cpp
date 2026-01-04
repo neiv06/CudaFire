@@ -2,11 +2,11 @@
 #include <chrono>
 #include <cmath>
 #include <vector>
+#include <string>
 
 #include "simulation.cuh"
 #include "terrain.h"
 
-// Print CUDA device info
 void printDeviceInfo() {
     int deviceCount;
     cudaGetDeviceCount(&deviceCount);
@@ -24,15 +24,9 @@ void printDeviceInfo() {
     std::cout << "Compute Capability: " << prop.major << "." << prop.minor << std::endl;
     std::cout << "Total Global Memory: " << prop.totalGlobalMem / (1024 * 1024) << " MB" << std::endl;
     std::cout << "Multiprocessors: " << prop.multiProcessorCount << std::endl;
-    std::cout << "Max Threads per Block: " << prop.maxThreadsPerBlock << std::endl;
-    std::cout << "Max Block Dimensions: " << prop.maxThreadsDim[0] << " x "
-        << prop.maxThreadsDim[1] << " x " << prop.maxThreadsDim[2] << std::endl;
-    std::cout << "Max Grid Dimensions: " << prop.maxGridSize[0] << " x "
-        << prop.maxGridSize[1] << " x " << prop.maxGridSize[2] << std::endl;
     std::cout << "========================" << std::endl << std::endl;
 }
 
-// Simple progress bar
 void printProgress(float progress, int width = 50) {
     int pos = static_cast<int>(width * progress);
     std::cout << "\r[";
@@ -46,67 +40,80 @@ void printProgress(float progress, int width = 50) {
 
 int main(int argc, char** argv) {
     std::cout << "=== Wildfire Spread Simulator ===" << std::endl;
-    std::cout << "CUDA-accelerated cellular automaton with Rothermel spread model" << std::endl;
+    std::cout << "=== Dixie Fire Simulation ===" << std::endl;
     std::cout << std::endl;
 
-    // Print device info
     printDeviceInfo();
 
-    // Simulation parameters
-    const int GRID_WIDTH = 1024;   // cells
-    const int GRID_HEIGHT = 1024;  // cells
-    const float CELL_SIZE = 30.0f; // meters
-    const float SIM_DURATION = 3600.0f * 6.0f;  // 6 hours in seconds
-    const float DT = 1.0f;  // 1 second timestep
+    // Data file paths
+    std::string elevation_file = "data/dixie_elevation.tif";
+    std::string fuel_file = "data/dixie_fuel.tif";
 
-    std::cout << "Simulation Configuration:" << std::endl;
-    std::cout << "  Grid size: " << GRID_WIDTH << " x " << GRID_HEIGHT << " cells" << std::endl;
-    std::cout << "  Cell resolution: " << CELL_SIZE << " m" << std::endl;
-    std::cout << "  Domain size: " << (GRID_WIDTH * CELL_SIZE / 1000.0f) << " x "
-        << (GRID_HEIGHT * CELL_SIZE / 1000.0f) << " km" << std::endl;
-    std::cout << "  Simulation duration: " << (SIM_DURATION / 3600.0f) << " hours" << std::endl;
-    std::cout << "  Timestep: " << DT << " seconds" << std::endl;
-    std::cout << std::endl;
-
-    // Load or generate terrain
+    // Load terrain data
     TerrainLoader terrain_loader;
 
-    // For now, generate synthetic terrain for testing
-    std::cout << "Generating synthetic terrain..." << std::endl;
-    terrain_loader.generateSynthetic(GRID_WIDTH, GRID_HEIGHT, 500.0f, 300.0f);
+    std::cout << "Loading elevation data..." << std::endl;
+    if (!terrain_loader.loadElevation(elevation_file)) {
+        std::cerr << "Failed to load elevation. Using synthetic terrain." << std::endl;
+        terrain_loader.generateSynthetic(1024, 1024, 1000.0f, 500.0f);
+    }
+
+    std::cout << "Loading fuel model data..." << std::endl;
+    if (!terrain_loader.loadFuelModel(fuel_file)) {
+        std::cerr << "Failed to load fuel model." << std::endl;
+        return 1;
+    }
+
+    // Calculate slope and aspect from elevation
     terrain_loader.calculateSlopeAspect();
 
-    // Debug: Check terrain at ignition point
-    const auto& terrain_data = terrain_loader.getTerrain();
-    int center_idx = (GRID_HEIGHT / 2) * GRID_WIDTH + (GRID_WIDTH / 2);
-    std::cout << "Debug - Center cell terrain:" << std::endl;
-    std::cout << "  Fuel model: " << (int)terrain_data[center_idx].fuel_model << std::endl;
-    std::cout << "  Fuel moisture: " << terrain_data[center_idx].fuel_moisture << std::endl;
-    std::cout << "  Elevation: " << terrain_data[center_idx].elevation << std::endl;
-    std::cout << "  Slope: " << terrain_data[center_idx].slope << std::endl;
+    int grid_width = terrain_loader.getWidth();
+    int grid_height = terrain_loader.getHeight();
+    float cell_size = terrain_loader.getCellSize();
+
+    // Simulation parameters
+    const float SIM_DURATION = 3600.0f * 24.0f;  // 24 hours
+    const float DT = 1.0f;  // 1 second timestep
+
+    std::cout << std::endl;
+    std::cout << "Simulation Configuration:" << std::endl;
+    std::cout << "  Grid size: " << grid_width << " x " << grid_height << " cells" << std::endl;
+    std::cout << "  Cell resolution: " << cell_size << " m" << std::endl;
+    std::cout << "  Domain size: " << (grid_width * cell_size / 1000.0f) << " x "
+        << (grid_height * cell_size / 1000.0f) << " km" << std::endl;
+    std::cout << "  Simulation duration: " << (SIM_DURATION / 3600.0f) << " hours" << std::endl;
+    std::cout << "  Total cells: " << (grid_width * grid_height) << std::endl;
+    std::cout << std::endl;
 
     // Initialize simulation
     std::cout << "Initializing simulation..." << std::endl;
     SimulationGrid grid;
-    initSimulation(&grid, GRID_WIDTH, GRID_HEIGHT);
+    initSimulation(&grid, grid_width, grid_height);
 
     // Upload terrain to GPU
     uploadTerrain(&grid, terrain_loader.getTerrain().data());
 
-    // Upload terrain to GPU
-    uploadTerrain(&grid, terrain_loader.getTerrain().data());
-
-    // Set wind conditions and upload to GPU
-    WindField wind_field = { 10.0f, 270.0f };  // 5 m/s from the west
+    // Set wind conditions - Dixie Fire had variable winds, using average
+    // Northeast wind pushing fire southwest initially
+    WindField wind_field = { 8.0f, 45.0f };  // 8 m/s from northeast
     cudaMemcpy(grid.d_wind, &wind_field, sizeof(WindField), cudaMemcpyHostToDevice);
+    std::cout << "Wind: " << wind_field.speed << " m/s from " << wind_field.direction << " degrees" << std::endl;
 
-    // Set ignition point(s) - center of domain
-    std::vector<int> ignition_x = { GRID_WIDTH / 2 };
-    std::vector<int> ignition_y = { GRID_HEIGHT / 2 };
+    // Dixie Fire ignition point - near Cresta Dam
+    // Coordinates: 39.9075°N, 121.4347°W
+    // Convert to grid coordinates
+    double ignition_lat = 39.9075;
+    double ignition_lon = -121.4347;
+    int ignition_x, ignition_y;
+    terrain_loader.getCellCoords(ignition_lon, ignition_lat, ignition_x, ignition_y);
 
-    std::cout << "Setting ignition at (" << ignition_x[0] << ", " << ignition_y[0] << ")" << std::endl;
-    ignitePoints(&grid, ignition_x.data(), ignition_y.data(),
-        static_cast<int>(ignition_x.size()), 0.0f);
+    std::cout << "Ignition point: (" << ignition_lon << ", " << ignition_lat << ")" << std::endl;
+    std::cout << "  Grid coords: (" << ignition_x << ", " << ignition_y << ")" << std::endl;
+
+    std::vector<int> ignition_xs = { ignition_x };
+    std::vector<int> ignition_ys = { ignition_y };
+    ignitePoints(&grid, ignition_xs.data(), ignition_ys.data(),
+        static_cast<int>(ignition_xs.size()), 0.0f);
 
     // Run simulation
     std::cout << std::endl << "Running simulation..." << std::endl;
@@ -114,22 +121,21 @@ int main(int argc, char** argv) {
     auto start_time = std::chrono::high_resolution_clock::now();
 
     int total_steps = static_cast<int>(SIM_DURATION / DT);
-    int report_interval = total_steps / 100;  // Report every 1%
+    int report_interval = total_steps / 100;
     if (report_interval < 1) report_interval = 1;
 
     for (int step = 0; step < total_steps; ++step) {
         stepSimulation(&grid, DT);
 
-        // Progress update
         if (step % report_interval == 0 || step == total_steps - 1) {
             float progress = static_cast<float>(step + 1) / total_steps;
             printProgress(progress);
         }
 
-        // Early termination if fire is out
-        if (step % 1000 == 0) {
+        // Check fire status periodically
+        if (step % 10000 == 0 && step > 0) {
             int burning = countBurningCells(&grid);
-            if (burning == 0 && step > 0) {
+            if (burning == 0) {
                 std::cout << std::endl << "Fire extinguished at t="
                     << (step * DT / 3600.0f) << " hours" << std::endl;
                 break;
@@ -148,7 +154,7 @@ int main(int argc, char** argv) {
     // Print statistics
     int burned = countBurnedCells(&grid);
     int burning = countBurningCells(&grid);
-    float burned_area_ha = burned * CELL_SIZE * CELL_SIZE / 10000.0f;  // hectares
+    float burned_area_ha = burned * cell_size * cell_size / 10000.0f;
 
     std::cout << "=== Simulation Results ===" << std::endl;
     std::cout << "Wall clock time: " << duration.count() / 1000.0f << " seconds" << std::endl;
@@ -159,11 +165,6 @@ int main(int argc, char** argv) {
     std::cout << "Area burned: " << burned_area_ha << " hectares ("
         << (burned_area_ha * 2.47105f) << " acres)" << std::endl;
     std::cout << "===========================" << std::endl;
-
-    // TODO: Output results
-    // - Write fire perimeter as GeoJSON or Shapefile
-    // - Write arrival time raster as GeoTIFF
-    // - Validate against FIRMS data if available
 
     // Cleanup
     freeSimulation(&grid);
