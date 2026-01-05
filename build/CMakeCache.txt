@@ -439,6 +439,12 @@ GDAL_INCLUDE_DIR:PATH=C:/OSGeo4W/include
 //Path to the GDAL library
 GDAL_LIBRARY:FILEPATH=C:/OSGeo4W/lib/gdal_i.lib
 
+//OpenGL library for win32
+OPENGL_gl_LIBRARY:STRING=opengl32
+
+//GLU library for win32
+OPENGL_glu_LIBRARY:STRING=glu32
+
 //Value Computed by CMake
 WildfireSimulator_BINARY_DIR:STATIC=C:/Users/Neiv Gupta/source/repos/cuda-wildfire-simulator/build
 
@@ -747,8 +753,14 @@ CUDA_pcsamplingutil_LIBRARY-ADVANCED:INTERNAL=1
 FIND_PACKAGE_MESSAGE_DETAILS_CUDAToolkit:INTERNAL=[C:/Program Files/NVIDIA GPU Computing Toolkit/CUDA/v12.9/include;C:/Program Files/Microsoft Visual Studio/2022/Community/VC/Tools/MSVC/14.44.35207/bin/Hostx86/x86][C:/Program Files/NVIDIA GPU Computing Toolkit/CUDA/v12.9/lib/x64/cudart.lib][C:/Program Files/NVIDIA GPU Computing Toolkit/CUDA/v12.9/bin][v12.9.41()]
 //Details about finding GDAL
 FIND_PACKAGE_MESSAGE_DETAILS_GDAL:INTERNAL=[C:/OSGeo4W/lib/gdal_i.lib][C:/OSGeo4W/include][v3.12.1()]
+//Details about finding OpenGL
+FIND_PACKAGE_MESSAGE_DETAILS_OpenGL:INTERNAL=[opengl32][ ][v()]
 //ADVANCED property for variable: GDAL_INCLUDE_DIR
 GDAL_INCLUDE_DIR-ADVANCED:INTERNAL=1
 //ADVANCED property for variable: GDAL_LIBRARY
 GDAL_LIBRARY-ADVANCED:INTERNAL=1
+//ADVANCED property for variable: OPENGL_gl_LIBRARY
+OPENGL_gl_LIBRARY-ADVANCED:INTERNAL=1
+//ADVANCED property for variable: OPENGL_glu_LIBRARY
+OPENGL_glu_LIBRARY-ADVANCED:INTERNAL=1
 

@@ -6,6 +6,7 @@
 
 #include "simulation.cuh"
 #include "terrain.h"
+#include "gl_viewer.h"
 
 void printDeviceInfo() {
     int deviceCount;
@@ -65,6 +66,7 @@ int main(int argc, char** argv) {
 
     // Default parameters
     bool use_synthetic = true;
+    bool visualize = false;
     std::string dem_file = "";
     std::string fuel_file = "";
     double ignition_lon = 0.0;
@@ -125,6 +127,9 @@ int main(int argc, char** argv) {
         }
         else if (arg == "--moisture" && i + 1 < argc) {
             moisture_override = std::stof(argv[++i]) / 100.0f;
+        }
+        else if (arg == "--visualize" || arg == "-v") {
+            visualize = true;
         }
         else {
             std::cerr << "Unknown argument: " << arg << std::endl;
@@ -245,61 +250,119 @@ int main(int argc, char** argv) {
     ignitePoints(&grid, ignition_xs.data(), ignition_ys.data(),
         static_cast<int>(ignition_xs.size()), 0.0f);
 
-    // Run simulation
-    std::cout << std::endl << "Running simulation..." << std::endl;
+    if (visualize) {
+        // Real-time visualization mode
+        std::cout << std::endl << "Starting visualization..." << std::endl;
+        std::cout << "Controls:" << std::endl;
+        std::cout << "  WASD - Move camera" << std::endl;
+        std::cout << "  Q/E - Move up/down" << std::endl;
+        std::cout << "  Tab - Toggle mouse look" << std::endl;
+        std::cout << "  Space - Pause/Resume" << std::endl;
+        std::cout << "  +/- - Speed up/slow down" << std::endl;
+        std::cout << "  Esc - Exit" << std::endl;
 
-    auto start_time = std::chrono::high_resolution_clock::now();
-
-    int total_steps = static_cast<int>(SIM_DURATION / DT);
-    int report_interval = total_steps / 100;
-    if (report_interval < 1) report_interval = 1;
-
-    for (int step = 0; step < total_steps; ++step) {
-        stepSimulation(&grid, DT);
-
-        if (step % report_interval == 0 || step == total_steps - 1) {
-            float progress = static_cast<float>(step + 1) / total_steps;
-            printProgress(progress);
+        GLViewer viewer(1920, 1080, "Wildfire Simulator");
+        if (!viewer.init(terrain_loader)) {
+            std::cerr << "Failed to initialize viewer" << std::endl;
+            return 1;
         }
 
-        // Check fire status periodically
-        if (step % 10000 == 0 && step > 0) {
-            int burning = countBurningCells(&grid);
-            if (burning == 0) {
-                std::cout << std::endl << "Fire extinguished at t="
-                    << (step * DT / 3600.0f) << " hours" << std::endl;
-                break;
+        float sim_time = 0.0f;
+        auto last_frame = std::chrono::high_resolution_clock::now();
+        int step = 0;
+
+        while (!viewer.shouldClose() && sim_time < SIM_DURATION) {
+            auto current_frame = std::chrono::high_resolution_clock::now();
+            float frame_dt = std::chrono::duration<float>(current_frame - last_frame).count();
+            last_frame = current_frame;
+
+            viewer.handleInput(frame_dt);
+
+            if (!viewer.isPaused()) {
+                // Run simulation steps based on speed
+                float sim_dt = frame_dt * viewer.getSimSpeed();
+                int steps_to_run = static_cast<int>(sim_dt / DT);
+                steps_to_run = std::max(1, std::min(steps_to_run, 100));
+
+                for (int i = 0; i < steps_to_run; ++i) {
+                    stepSimulation(&grid, DT);
+                    sim_time += DT;
+                    ++step;
+                }
+
+                // Update visualization
+                downloadState(&grid);
+                viewer.updateFireState(grid.h_cells, grid_width * grid_height);
+            }
+
+            viewer.render();
+
+            // Check for fire extinction
+            if (step % 1000 == 0) {
+                int burning = countBurningCells(&grid);
+                if (burning == 0 && step > 0) {
+                    std::cout << "Fire extinguished at t=" << (sim_time / 3600.0f) << " hours" << std::endl;
+                    break;
+                }
             }
         }
     }
+    else {
+        // Run simulation
+        std::cout << std::endl << "Running simulation..." << std::endl;
 
-    auto end_time = std::chrono::high_resolution_clock::now();
-    auto duration = std::chrono::duration_cast<std::chrono::milliseconds>(end_time - start_time);
+        auto start_time = std::chrono::high_resolution_clock::now();
 
-    std::cout << std::endl << std::endl;
+        int total_steps = static_cast<int>(SIM_DURATION / DT);
+        int report_interval = total_steps / 100;
+        if (report_interval < 1) report_interval = 1;
 
-    // Download final state
-    downloadState(&grid);
+        for (int step = 0; step < total_steps; ++step) {
+            stepSimulation(&grid, DT);
 
-    // Print statistics
-    int burned = countBurnedCells(&grid);
-    int burning = countBurningCells(&grid);
-    float burned_area_ha = burned * cell_size * cell_size / 10000.0f;
+            if (step % report_interval == 0 || step == total_steps - 1) {
+                float progress = static_cast<float>(step + 1) / total_steps;
+                printProgress(progress);
+            }
 
-    std::cout << "=== Simulation Results ===" << std::endl;
-    std::cout << "Wall clock time: " << duration.count() / 1000.0f << " seconds" << std::endl;
-    std::cout << "Simulation speed: " << (SIM_DURATION / (duration.count() / 1000.0f))
-        << "x real-time" << std::endl;
-    std::cout << "Cells burned: " << burned << std::endl;
-    std::cout << "Cells still burning: " << burning << std::endl;
-    std::cout << "Area burned: " << burned_area_ha << " hectares ("
-        << (burned_area_ha * 2.47105f) << " acres)" << std::endl;
-    std::cout << "===========================" << std::endl;
+            // Check fire status periodically
+            if (step % 10000 == 0 && step > 0) {
+                int burning = countBurningCells(&grid);
+                if (burning == 0) {
+                    std::cout << std::endl << "Fire extinguished at t="
+                        << (step * DT / 3600.0f) << " hours" << std::endl;
+                    break;
+                }
+            }
+        }
 
-    // Cleanup
-    freeSimulation(&grid);
+        auto end_time = std::chrono::high_resolution_clock::now();
+        auto duration = std::chrono::duration_cast<std::chrono::milliseconds>(end_time - start_time);
 
-    std::cout << std::endl << "Simulation complete!" << std::endl;
+        std::cout << std::endl << std::endl;
 
+        // Download final state
+        downloadState(&grid);
+
+        // Print statistics
+        int burned = countBurnedCells(&grid);
+        int burning = countBurningCells(&grid);
+        float burned_area_ha = burned * cell_size * cell_size / 10000.0f;
+
+        std::cout << "=== Simulation Results ===" << std::endl;
+        std::cout << "Wall clock time: " << duration.count() / 1000.0f << " seconds" << std::endl;
+        std::cout << "Simulation speed: " << (SIM_DURATION / (duration.count() / 1000.0f))
+            << "x real-time" << std::endl;
+        std::cout << "Cells burned: " << burned << std::endl;
+        std::cout << "Cells still burning: " << burning << std::endl;
+        std::cout << "Area burned: " << burned_area_ha << " hectares ("
+            << (burned_area_ha * 2.47105f) << " acres)" << std::endl;
+        std::cout << "===========================" << std::endl;
+
+        // Cleanup
+        freeSimulation(&grid);
+
+        std::cout << std::endl << "Simulation complete!" << std::endl;
+    }
     return 0;
 }
