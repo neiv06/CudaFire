@@ -52,6 +52,12 @@ private:
     GLuint terrain_color_vbo_ = 0;
     int num_indices_ = 0;
 
+    // Cell borders (wireframe)
+    GLuint border_vao_ = 0;
+    GLuint border_vbo_ = 0;
+    GLuint border_ebo_ = 0;
+    int num_border_indices_ = 0;
+
     // Fire overlay
     GLuint fire_vbo_ = 0;
     std::vector<float> fire_colors_;
@@ -86,6 +92,7 @@ private:
     // Helper functions
     bool createShaders();
     void createTerrainMesh(const TerrainLoader& terrain);
+    void createCellBorders(const TerrainLoader& terrain);
     void updateColors(const SimCell* cells);
     glm::vec3 getTerrainColor(float elevation, uint8_t fuel_model);
     glm::vec3 getFireColor(CellState state, float residence_time);

@@ -1,0 +1,20 @@
+# ninja log v7
+22	975	7892844859288073	CMakeFiles/wildfire_sim.dir/src/gl_viewer.cpp.obj	bd46c88316f484b6
+4	1113	7892844859108155	CMakeFiles/wildfire_sim.dir/src/main.cpp.obj	da97c0aa176f72b
+9	1177	7892844859163019	CMakeFiles/wildfire_sim.dir/src/terrain.cpp.obj	9240a514e5fbb6da
+18	1442	7892844859253029	CMakeFiles/wildfire_sim.dir/src/rothermel.cu.obj	2945423bf72b8a
+15	1692	7892844859218026	CMakeFiles/wildfire_sim.dir/src/simulation.cu.obj	3bef00ba1a43e42d
+1692	1941	7892844875988126	CMakeFiles/wildfire_sim.dir/cmake_device_link.obj	4bc97ac1c5154cfa
+15	293	7892845694404640	CMakeFiles/wildfire_sim.dir/src/glad.c.obj	3f7081bb3669d640
+293	503	7892845697184873	CMakeFiles/wildfire_sim.dir/cmake_device_link.obj	a8538116e040010b
+503	636	7892845699277233	wildfire_sim.exe	37f8b6a6d125d96
+13	1173	7892857266845852	CMakeFiles/wildfire_sim.dir/src/gl_viewer.cpp.obj	bd46c88316f484b6
+6	1205	7892857266774858	CMakeFiles/wildfire_sim.dir/src/main.cpp.obj	da97c0aa176f72b
+1205	1612	7892857278759688	CMakeFiles/wildfire_sim.dir/cmake_device_link.obj	a8538116e040010b
+1613	1801	7892857282838154	wildfire_sim.exe	37f8b6a6d125d96
+9	1337	7892883369674913	CMakeFiles/wildfire_sim.dir/src/terrain.cpp.obj	9240a514e5fbb6da
+1338	1882	7892883382954899	CMakeFiles/wildfire_sim.dir/cmake_device_link.obj	a8538116e040010b
+1882	2066	7892883388402307	wildfire_sim.exe	37f8b6a6d125d96
+6	1069	7892886934810745	CMakeFiles/wildfire_sim.dir/src/terrain.cpp.obj	9240a514e5fbb6da
+1070	1290	7892886945450851	CMakeFiles/wildfire_sim.dir/cmake_device_link.obj	a8538116e040010b
+1291	1436	7892886947655840	wildfire_sim.exe	37f8b6a6d125d96

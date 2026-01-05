@@ -16,7 +16,8 @@ uniform mat4 projection;
 
 void main() {
     gl_Position = projection * view * model * vec4(aPos, 1.0);
-    vertexColor = aColor;
+    // Use provided color or default to black if not provided
+    vertexColor = (length(aColor) > 0.0) ? aColor : vec3(0.0, 0.0, 0.0);
 }
 )";
 
@@ -26,8 +27,15 @@ const char* fragmentShaderSource = R"(
 in vec3 vertexColor;
 out vec4 FragColor;
 
+uniform bool useUniformColor;
+uniform vec3 uniformColor;
+
 void main() {
-    FragColor = vec4(vertexColor, 1.0);
+    if (useUniformColor) {
+        FragColor = vec4(uniformColor, 1.0);
+    } else {
+        FragColor = vec4(vertexColor, 1.0);
+    }
 }
 )";
 
@@ -84,6 +92,9 @@ GLViewer::~GLViewer() {
     if (terrain_vbo_) glDeleteBuffers(1, &terrain_vbo_);
     if (terrain_ebo_) glDeleteBuffers(1, &terrain_ebo_);
     if (terrain_color_vbo_) glDeleteBuffers(1, &terrain_color_vbo_);
+    if (border_vao_) glDeleteVertexArrays(1, &border_vao_);
+    if (border_vbo_) glDeleteBuffers(1, &border_vbo_);
+    if (border_ebo_) glDeleteBuffers(1, &border_ebo_);
     if (shader_program_) glDeleteProgram(shader_program_);
 
     glfwTerminate();
@@ -101,6 +112,9 @@ bool GLViewer::init(const TerrainLoader& terrain) {
 
     // Create terrain mesh
     createTerrainMesh(terrain);
+
+    // Create cell borders
+    createCellBorders(terrain);
 
     // Initialize camera position (above terrain center, looking down)
     float center_x = grid_width_ * cell_size_ * 0.5f;
@@ -256,6 +270,90 @@ void GLViewer::createTerrainMesh(const TerrainLoader& terrain) {
         << " (" << num_indices_ / 3 << " triangles)" << std::endl;
 }
 
+void GLViewer::createCellBorders(const TerrainLoader& terrain) {
+    const auto& terrain_data = terrain.getTerrain();
+
+    // Create vertices for cell borders (same positions as terrain vertices)
+    std::vector<float> border_vertices;
+    std::vector<float> border_colors;  // All black
+    border_vertices.reserve(grid_width_ * grid_height_ * 3);
+    border_colors.reserve(grid_width_ * grid_height_ * 3);
+
+    for (int z = 0; z < grid_height_; ++z) {
+        for (int x = 0; x < grid_width_; ++x) {
+            int idx = z * grid_width_ + x;
+            const TerrainCell& cell = terrain_data[idx];
+
+            // Position (x, y=elevation, z) - same as terrain
+            border_vertices.push_back(x * cell_size_);
+            border_vertices.push_back(cell.elevation + 0.1f);  // Slightly above terrain to avoid z-fighting
+            border_vertices.push_back(z * cell_size_);
+
+            // Black color for borders
+            border_colors.push_back(0.0f);
+            border_colors.push_back(0.0f);
+            border_colors.push_back(0.0f);
+        }
+    }
+
+    // Create line indices for cell borders
+    // Each cell has 4 edges: top, right, bottom, left
+    std::vector<unsigned int> border_indices;
+    border_indices.reserve((grid_width_ - 1) * grid_height_ * 2 + grid_width_ * (grid_height_ - 1) * 2);
+
+    // Horizontal lines (top edges of each cell)
+    for (int z = 0; z < grid_height_; ++z) {
+        for (int x = 0; x < grid_width_ - 1; ++x) {
+            int idx = z * grid_width_ + x;
+            border_indices.push_back(idx);
+            border_indices.push_back(idx + 1);
+        }
+    }
+
+    // Vertical lines (left edges of each cell)
+    for (int z = 0; z < grid_height_ - 1; ++z) {
+        for (int x = 0; x < grid_width_; ++x) {
+            int idx = z * grid_width_ + x;
+            border_indices.push_back(idx);
+            border_indices.push_back(idx + grid_width_);
+        }
+    }
+
+    num_border_indices_ = static_cast<int>(border_indices.size());
+
+    // Create VAO for borders
+    glGenVertexArrays(1, &border_vao_);
+    glBindVertexArray(border_vao_);
+
+    // Position VBO
+    GLuint border_pos_vbo;
+    glGenBuffers(1, &border_pos_vbo);
+    glBindBuffer(GL_ARRAY_BUFFER, border_pos_vbo);
+    glBufferData(GL_ARRAY_BUFFER, border_vertices.size() * sizeof(float),
+        border_vertices.data(), GL_STATIC_DRAW);
+    glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, 3 * sizeof(float), (void*)0);
+    glEnableVertexAttribArray(0);
+
+    // Color VBO (all black)
+    GLuint border_color_vbo;
+    glGenBuffers(1, &border_color_vbo);
+    glBindBuffer(GL_ARRAY_BUFFER, border_color_vbo);
+    glBufferData(GL_ARRAY_BUFFER, border_colors.size() * sizeof(float),
+        border_colors.data(), GL_STATIC_DRAW);
+    glVertexAttribPointer(1, 3, GL_FLOAT, GL_FALSE, 3 * sizeof(float), (void*)0);
+    glEnableVertexAttribArray(1);
+
+    // Index buffer
+    glGenBuffers(1, &border_ebo_);
+    glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, border_ebo_);
+    glBufferData(GL_ELEMENT_ARRAY_BUFFER, border_indices.size() * sizeof(unsigned int),
+        border_indices.data(), GL_STATIC_DRAW);
+
+    glBindVertexArray(0);
+
+    std::cout << "Created cell borders: " << num_border_indices_ / 2 << " line segments" << std::endl;
+}
+
 glm::vec3 GLViewer::getTerrainColor(float elevation, uint8_t fuel_model) {
     if (fuel_model == 0) {
         return glm::vec3(0.1f, 0.1f, 0.4f);  // Water/non-burnable
@@ -375,7 +473,17 @@ bool GLViewer::render() {
 
     // Draw terrain
     glBindVertexArray(terrain_vao_);
+    glUniform1i(glGetUniformLocation(shader_program_, "useUniformColor"), 0);
     glDrawElements(GL_TRIANGLES, num_indices_, GL_UNSIGNED_INT, 0);
+    glBindVertexArray(0);
+
+    // Draw cell borders (black wireframe)
+    glLineWidth(1.0f);  // Thin lines
+    glUniform1i(glGetUniformLocation(shader_program_, "useUniformColor"), 1);
+    glm::vec3 black(0.0f, 0.0f, 0.0f);
+    glUniform3fv(glGetUniformLocation(shader_program_, "uniformColor"), 1, &black[0]);
+    glBindVertexArray(border_vao_);
+    glDrawElements(GL_LINES, num_border_indices_, GL_UNSIGNED_INT, 0);
     glBindVertexArray(0);
 
     glfwSwapBuffers(window_);

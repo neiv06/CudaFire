@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 3.18)
-project(WildfireSimulator CUDA CXX)
+project(cuda-wildfire-simulator LANGUAGES C CUDA CXX)
 
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CUDA_STANDARD 17)
@@ -14,7 +14,7 @@ find_package(GDAL REQUIRED)
 find_package(OpenGL REQUIRED)
 
 # GLFW - manual path
-set(GLFW_DIR "C:/libs/glfw-3.4.bin.WIN64")  # Adjust version number if different
+set(GLFW_DIR "C:/libs/glfw/glfw-3.4.bin.WIN64")  # Adjust version number if different
 set(GLFW_INCLUDE_DIR "${GLFW_DIR}/include")
 set(GLFW_LIBRARY "${GLFW_DIR}/lib-vc2022/glfw3.lib")  # or lib-vc2019 depending on your VS version
 

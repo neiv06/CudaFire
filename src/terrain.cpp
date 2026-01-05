@@ -13,6 +13,51 @@ constexpr float PI = 3.14159265358979323846f;
 constexpr float DEG_TO_RAD = PI / 180.0f;
 constexpr float RAD_TO_DEG = 180.0f / PI;
 
+// Simple smooth interpolation function (smoothstep)
+inline float smoothstep(float t) {
+    return t * t * (3.0f - 2.0f * t);
+}
+
+// Simple hash function for consistent pseudo-random values
+inline unsigned int hash(int x, int y, int seed) {
+    unsigned int h = seed;
+    h ^= x * 73856093u;
+    h ^= y * 19349663u;
+    h = h * 1103515245u + 12345u;
+    return h;
+}
+
+// Convert hash to float in range [-1, 1]
+inline float hashToFloat(unsigned int h) {
+    return (static_cast<float>(h & 0x7FFFFFFF) / 0x7FFFFFFF) * 2.0f - 1.0f;
+}
+
+// Value noise function - creates smooth coherent features
+float valueNoise(float x, float y, int seed, int grid_size) {
+    // Create grid of random values
+    int grid_x = static_cast<int>(x * grid_size);
+    int grid_y = static_cast<int>(y * grid_size);
+    
+    // Get consistent random values at grid corners using hash
+    float v00 = hashToFloat(hash(grid_x, grid_y, seed));
+    float v10 = hashToFloat(hash(grid_x + 1, grid_y, seed));
+    float v01 = hashToFloat(hash(grid_x, grid_y + 1, seed));
+    float v11 = hashToFloat(hash(grid_x + 1, grid_y + 1, seed));
+    
+    // Fractional part for interpolation
+    float fx = x * grid_size - grid_x;
+    float fy = y * grid_size - grid_y;
+    
+    // Smooth interpolation
+    float sx = smoothstep(fx);
+    float sy = smoothstep(fy);
+    
+    // Bilinear interpolation
+    float v0 = v00 * (1.0f - sx) + v10 * sx;
+    float v1 = v01 * (1.0f - sx) + v11 * sx;
+    return v0 * (1.0f - sy) + v1 * sy;
+}
+
 // Generate synthetic terrain for testing
 void TerrainLoader::generateSynthetic(int width, int height, float base_elevation, float elevation_range) {
     width_ = width;
@@ -23,37 +68,72 @@ void TerrainLoader::generateSynthetic(int width, int height, float base_elevatio
     terrain_.resize(width * height);
     elevation_raw_.resize(width * height);
 
-    // Random number generator for noise
-    std::mt19937 rng(42);  // Fixed seed for reproducibility
-    std::uniform_real_distribution<float> noise(-0.1f, 0.1f);
-    std::uniform_int_distribution<int> fuel_dist(1, 10);  // Fuel models 1-10
-    std::uniform_real_distribution<float> moisture_dist(0.04f, 0.12f);
+    // Random number generators with time-based seed for variation
+    std::random_device rd;
+    unsigned int base_seed = rd();
+    std::mt19937 rng(base_seed);  // Random seed for variation
+    std::mt19937 rng_fuel(base_seed + 1000);  // Separate RNG for fuel
+    
+    // Fuel model distributions - more random
+    std::uniform_int_distribution<int> all_fuels(1, 13);  // All fuel models
+    std::uniform_int_distribution<int> grass_fuels(1, 3);  // Grass models
+    std::uniform_int_distribution<int> brush_fuels(4, 7);  // Brush models
+    std::uniform_int_distribution<int> timber_fuels(8, 10);  // Timber models
+    std::uniform_int_distribution<int> slash_fuels(11, 13);  // Slash models
+    std::uniform_real_distribution<float> fuel_random(0.0f, 1.0f);  // For random fuel selection
+    
+    // Moisture with more variation
+    std::uniform_real_distribution<float> moisture_dist(0.03f, 0.15f);  // Wider range
+    
+    // Canopy cover variation
+    std::uniform_real_distribution<float> canopy_variation(-0.3f, 0.3f);  // For canopy cover variation
 
-    std::cout << "Generating " << width << "x" << height << " synthetic terrain..." << std::endl;
+    std::cout << "Generating " << width << "x" << height << " synthetic terrain with coherent features..." << std::endl;
 
-    // Generate elevation using multiple octaves of Perlin-like noise
-    // Simplified: use combination of sinusoids with different frequencies
+    // Generate elevation using multi-octave value noise for smooth, coherent features
     for (int y = 0; y < height; ++y) {
         for (int x = 0; x < width; ++x) {
             int idx = y * width + x;
 
-            // Multi-frequency elevation (poor man's Perlin)
+            // Normalized coordinates (0 to 1)
             float fx = static_cast<float>(x) / width;
             float fy = static_cast<float>(y) / height;
 
             float elev = base_elevation;
 
-            // Large-scale terrain features
-            elev += elevation_range * 0.5f * sinf(fx * 2.0f * PI) * cosf(fy * 2.0f * PI);
-
-            // Medium-scale hills
-            elev += elevation_range * 0.25f * sinf(fx * 8.0f * PI + 1.5f) * cosf(fy * 6.0f * PI);
-
-            // Small-scale ridges
-            elev += elevation_range * 0.15f * sinf(fx * 20.0f * PI) * sinf(fy * 20.0f * PI);
-
-            // Random noise
-            elev += elevation_range * 0.1f * noise(rng);
+            // Multi-octave value noise - creates smooth, coherent terrain features
+            // Each octave uses different grid sizes and seeds for variation
+            
+            // Octave 1: Very large-scale features (major mountain ranges, valleys)
+            elev += elevation_range * 0.5f * valueNoise(fx, fy, base_seed, 8);
+            
+            // Octave 2: Large-scale features (mountain groups, large valleys)
+            elev += elevation_range * 0.3f * valueNoise(fx * 2.0f, fy * 2.0f, base_seed + 100, 16);
+            
+            // Octave 3: Medium-large features (individual mountains, hills)
+            elev += elevation_range * 0.2f * valueNoise(fx * 4.0f, fy * 4.0f, base_seed + 200, 32);
+            
+            // Octave 4: Medium-scale features (hills, ridges)
+            elev += elevation_range * 0.15f * valueNoise(fx * 8.0f, fy * 8.0f, base_seed + 300, 64);
+            
+            // Octave 5: Small-scale features (small hills, terrain detail)
+            elev += elevation_range * 0.1f * valueNoise(fx * 16.0f, fy * 16.0f, base_seed + 400, 128);
+            
+            // Octave 6: Fine detail (terrain texture)
+            elev += elevation_range * 0.05f * valueNoise(fx * 32.0f, fy * 32.0f, base_seed + 500, 256);
+            
+            // Additional coherent sine wave features for more natural variation
+            // Large-scale undulating terrain
+            elev += elevation_range * 0.25f * sinf(fx * 1.2f * PI) * cosf(fy * 1.2f * PI);
+            elev += elevation_range * 0.2f * sinf(fx * 2.3f * PI + 1.5f) * cosf(fy * 2.1f * PI + 0.8f);
+            
+            // Medium-scale rolling hills
+            elev += elevation_range * 0.15f * sinf(fx * 4.5f * PI + 2.1f) * cosf(fy * 4.2f * PI + 1.3f);
+            elev += elevation_range * 0.12f * sinf(fx * 6.0f * PI) * sinf(fy * 5.8f * PI + 0.7f);
+            
+            // Small-scale terrain detail
+            elev += elevation_range * 0.08f * sinf(fx * 12.0f * PI + 3.2f) * cosf(fy * 11.5f * PI);
+            elev += elevation_range * 0.05f * sinf(fx * 18.0f * PI + 1.7f) * sinf(fy * 17.5f * PI + 2.3f);
 
             elevation_raw_[idx] = elev;
 
@@ -63,46 +143,98 @@ void TerrainLoader::generateSynthetic(int width, int height, float base_elevatio
             cell.slope = 0.0f;  // Will be calculated
             cell.aspect = 0.0f; // Will be calculated
 
-            // Assign fuel model based on elevation and random variation
-            // Lower elevations: grass, higher: brush/timber
+            // Fuel model assignment based on elevation with some randomness
+            // Use smooth noise for fuel distribution to create coherent fuel patches
+            float fuel_noise = valueNoise(fx * 3.0f, fy * 3.0f, base_seed + 10000, 32);
             float normalized_elev = (elev - base_elevation) / elevation_range;
-
-            if (normalized_elev < -0.3f) {
-                cell.fuel_model = 1;  // Short grass
+            float fuel_rand = fuel_random(rng_fuel) * 0.3f + fuel_noise * 0.7f;  // Blend random with noise
+            fuel_rand = (fuel_rand + 1.0f) * 0.5f;  // Normalize to 0-1
+            
+            // Elevation-based probability with high randomness
+            if (normalized_elev < -0.5f) {
+                // Very low: mostly water or grass
+                if (fuel_rand < 0.3f) {
+                    cell.fuel_model = 0;  // Water (non-burnable)
+                } else if (fuel_rand < 0.7f) {
+                    cell.fuel_model = grass_fuels(rng_fuel);
+                } else {
+                    cell.fuel_model = all_fuels(rng_fuel);  // Random
+                }
             }
-            else if (normalized_elev < 0.0f) {
-                cell.fuel_model = fuel_dist(rng) <= 5 ? 2 : 3;  // Timber grass or tall grass
+            else if (normalized_elev < -0.2f) {
+                // Low: grass with some variation
+                if (fuel_rand < 0.5f) {
+                    cell.fuel_model = grass_fuels(rng_fuel);
+                } else if (fuel_rand < 0.8f) {
+                    cell.fuel_model = brush_fuels(rng_fuel);
+                } else {
+                    cell.fuel_model = all_fuels(rng_fuel);  // Random
+                }
             }
-            else if (normalized_elev < 0.3f) {
-                cell.fuel_model = fuel_dist(rng) <= 7 ? 5 : 6;  // Brush
+            else if (normalized_elev < 0.2f) {
+                // Mid: mix of grass, brush, and timber
+                if (fuel_rand < 0.3f) {
+                    cell.fuel_model = grass_fuels(rng_fuel);
+                } else if (fuel_rand < 0.6f) {
+                    cell.fuel_model = brush_fuels(rng_fuel);
+                } else if (fuel_rand < 0.85f) {
+                    cell.fuel_model = timber_fuels(rng_fuel);
+                } else {
+                    cell.fuel_model = all_fuels(rng_fuel);  // Random
+                }
+            }
+            else if (normalized_elev < 0.5f) {
+                // High: mostly brush and timber
+                if (fuel_rand < 0.4f) {
+                    cell.fuel_model = brush_fuels(rng_fuel);
+                } else if (fuel_rand < 0.8f) {
+                    cell.fuel_model = timber_fuels(rng_fuel);
+                } else if (fuel_rand < 0.95f) {
+                    cell.fuel_model = slash_fuels(rng_fuel);
+                } else {
+                    cell.fuel_model = all_fuels(rng_fuel);  // Random
+                }
             }
             else {
-                cell.fuel_model = fuel_dist(rng) <= 5 ? 8 : 9;  // Timber litter
+                // Very high: timber and slash
+                if (fuel_rand < 0.5f) {
+                    cell.fuel_model = timber_fuels(rng_fuel);
+                } else if (fuel_rand < 0.9f) {
+                    cell.fuel_model = slash_fuels(rng_fuel);
+                } else {
+                    cell.fuel_model = all_fuels(rng_fuel);  // Random
+                }
             }
 
-            // Create some non-burnable areas (water, rock)
-            if (elev < base_elevation - elevation_range * 0.4f) {
-                cell.fuel_model = 0;  // Water
+            // Additional random non-burnable areas (water, rock, urban)
+            float nonburn_rand = fuel_random(rng_fuel);
+            if (normalized_elev < -0.6f && nonburn_rand < 0.4f) {
+                cell.fuel_model = 0;  // Water in very low areas
+            } else if (normalized_elev > 0.7f && nonburn_rand < 0.1f) {
+                cell.fuel_model = 0;  // Rock/barren in very high areas
             }
 
-            // Fuel moisture varies with aspect (to be calculated) and random
+            // Fuel moisture with more variation
             cell.fuel_moisture = moisture_dist(rng);
 
-            // Canopy cover based on fuel model
+            // Canopy cover with more variation
             if (cell.fuel_model >= 8 && cell.fuel_model <= 10) {
-                cell.canopy_cover = 0.4f + noise(rng) * 0.3f;
+                cell.canopy_cover = 0.3f + canopy_variation(rng) * 0.4f;  // Timber: 0-0.7
             }
             else if (cell.fuel_model >= 4 && cell.fuel_model <= 7) {
-                cell.canopy_cover = 0.2f + noise(rng) * 0.2f;
+                cell.canopy_cover = 0.15f + canopy_variation(rng) * 0.3f;  // Brush: 0-0.45
+            }
+            else if (cell.fuel_model >= 11 && cell.fuel_model <= 13) {
+                cell.canopy_cover = 0.2f + canopy_variation(rng) * 0.25f;  // Slash: 0-0.45
             }
             else {
-                cell.canopy_cover = noise(rng) * 0.1f;
+                cell.canopy_cover = std::abs(canopy_variation(rng)) * 0.15f;  // Grass: 0-0.15
             }
             cell.canopy_cover = std::max(0.0f, std::min(1.0f, cell.canopy_cover));
         }
     }
 
-    std::cout << "Terrain generation complete." << std::endl;
+    std::cout << "Terrain generation complete with high variation." << std::endl;
 }
 
 // Load elevation from GeoTIFF using GDAL
@@ -128,7 +260,7 @@ bool TerrainLoader::loadElevation(const std::string& filepath) {
         pixel_scale_x_ = geotransform[1];
         pixel_scale_y_ = geotransform[5];
         // Calculate cell size in meters (approximate at this latitude)
-        cell_size_ = std::abs(pixel_scale_x_) * 111320.0f * cosf(origin_lat_ * DEG_TO_RAD);
+        cell_size_ = static_cast<float>(std::abs(pixel_scale_x_)) * 111320.0f * static_cast<float>(cos(origin_lat_ * DEG_TO_RAD));
     }
 
     std::cout << "  Origin: " << origin_lon_ << ", " << origin_lat_ << std::endl;
