@@ -1,4 +1,4 @@
-![simulated Dixie Fire][simulator screenshot.png]
+![simulator screenshot.png](https://github.com/neiv06/cuda-wildfire-simulator/blob/master/simulator%20screenshot.png)
 # CUDA Wildfire Spread Simulator
 
 A GPU-accelerated wildfire spread simulator using CUDA and the Rothermel fire spread model. This project simulates how wildfires propagate across terrain based on fuel types, moisture content, slope, and wind conditions.
