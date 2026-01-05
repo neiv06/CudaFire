@@ -38,42 +38,165 @@ void printProgress(float progress, int width = 50) {
     std::cout << "] " << static_cast<int>(progress * 100.0f) << "%" << std::flush;
 }
 
+void printUsage(const char* program) {
+    std::cout << "Usage: " << program << " [options]" << std::endl;
+    std::cout << std::endl;
+    std::cout << "Options:" << std::endl;
+    std::cout << "  --help                  Show this help message" << std::endl;
+    std::cout << "  --synthetic             Run with synthetic terrain (default)" << std::endl;
+    std::cout << "  --dem <file>            Load elevation from GeoTIFF file" << std::endl;
+    std::cout << "  --fuel <file>           Load fuel model from GeoTIFF file" << std::endl;
+    std::cout << "  --ignition <lon,lat>    Set ignition point (longitude,latitude)" << std::endl;
+    std::cout << "  --ignition-cell <x,y>   Set ignition point (grid cell coordinates)" << std::endl;
+    std::cout << "  --wind <speed,dir>      Set wind (speed in m/s, direction in degrees)" << std::endl;
+    std::cout << "  --duration <hours>      Simulation duration in hours (default: 6)" << std::endl;
+    std::cout << "  --moisture <percent>    Override fuel moisture (default: from terrain)" << std::endl;
+    std::cout << std::endl;
+    std::cout << "Examples:" << std::endl;
+    std::cout << "  " << program << " --synthetic" << std::endl;
+    std::cout << "  " << program << " --dem data/elevation.tif --fuel data/fuel.tif --ignition -121.4347,39.9075" << std::endl;
+    std::cout << "  " << program << " --dem data/dixie_elevation.tif --fuel data/dixie_fuel.tif --ignition -121.4347,39.9075 --wind 8,45 --duration 24" << std::endl;
+}
+
 int main(int argc, char** argv) {
     std::cout << "=== Wildfire Spread Simulator ===" << std::endl;
-    std::cout << "=== Dixie Fire Simulation ===" << std::endl;
+    std::cout << "CUDA-accelerated cellular automaton with Rothermel spread model" << std::endl;
     std::cout << std::endl;
 
+    // Default parameters
+    bool use_synthetic = true;
+    std::string dem_file = "";
+    std::string fuel_file = "";
+    double ignition_lon = 0.0;
+    double ignition_lat = 0.0;
+    int ignition_cell_x = -1;
+    int ignition_cell_y = -1;
+    bool ignition_from_coords = false;
+    float wind_speed = 5.0f;
+    float wind_dir = 270.0f;
+    float sim_hours = 6.0f;
+    float moisture_override = -1.0f;
+
+    // Parse command-line arguments
+    for (int i = 1; i < argc; ++i) {
+        std::string arg = argv[i];
+
+        if (arg == "--help" || arg == "-h") {
+            printUsage(argv[0]);
+            return 0;
+        }
+        else if (arg == "--synthetic") {
+            use_synthetic = true;
+        }
+        else if (arg == "--dem" && i + 1 < argc) {
+            dem_file = argv[++i];
+            use_synthetic = false;
+        }
+        else if (arg == "--fuel" && i + 1 < argc) {
+            fuel_file = argv[++i];
+        }
+        else if (arg == "--ignition" && i + 1 < argc) {
+            std::string coords = argv[++i];
+            size_t comma = coords.find(',');
+            if (comma != std::string::npos) {
+                ignition_lon = std::stod(coords.substr(0, comma));
+                ignition_lat = std::stod(coords.substr(comma + 1));
+                ignition_from_coords = true;
+            }
+        }
+        else if (arg == "--ignition-cell" && i + 1 < argc) {
+            std::string coords = argv[++i];
+            size_t comma = coords.find(',');
+            if (comma != std::string::npos) {
+                ignition_cell_x = std::stoi(coords.substr(0, comma));
+                ignition_cell_y = std::stoi(coords.substr(comma + 1));
+            }
+        }
+        else if (arg == "--wind" && i + 1 < argc) {
+            std::string wind = argv[++i];
+            size_t comma = wind.find(',');
+            if (comma != std::string::npos) {
+                wind_speed = std::stof(wind.substr(0, comma));
+                wind_dir = std::stof(wind.substr(comma + 1));
+            }
+        }
+        else if (arg == "--duration" && i + 1 < argc) {
+            sim_hours = std::stof(argv[++i]);
+        }
+        else if (arg == "--moisture" && i + 1 < argc) {
+            moisture_override = std::stof(argv[++i]) / 100.0f;
+        }
+        else {
+            std::cerr << "Unknown argument: " << arg << std::endl;
+            printUsage(argv[0]);
+            return 1;
+        }
+    }
+
+    // Print device info
     printDeviceInfo();
 
-    // Data file paths
-    std::string elevation_file = "data/dixie_elevation.tif";
-    std::string fuel_file = "data/dixie_fuel.tif";
-
-    // Load terrain data
+    // Load or generate terrain
     TerrainLoader terrain_loader;
+    int grid_width, grid_height;
+    float cell_size;
 
-    std::cout << "Loading elevation data..." << std::endl;
-    if (!terrain_loader.loadElevation(elevation_file)) {
-        std::cerr << "Failed to load elevation. Using synthetic terrain." << std::endl;
-        terrain_loader.generateSynthetic(1024, 1024, 1000.0f, 500.0f);
+    if (use_synthetic) {
+        std::cout << "Mode: Synthetic Terrain" << std::endl;
+        grid_width = 1024;
+        grid_height = 1024;
+        cell_size = 30.0f;
+
+        std::cout << "Generating synthetic terrain..." << std::endl;
+        terrain_loader.generateSynthetic(grid_width, grid_height, 500.0f, 300.0f);
+    }
+    else {
+        std::cout << "Mode: Real Terrain Data" << std::endl;
+
+        if (dem_file.empty()) {
+            std::cerr << "Error: --dem file required for real terrain mode" << std::endl;
+            return 1;
+        }
+
+        std::cout << "Loading elevation: " << dem_file << std::endl;
+        if (!terrain_loader.loadElevation(dem_file)) {
+            std::cerr << "Failed to load elevation file" << std::endl;
+            return 1;
+        }
+
+        if (!fuel_file.empty()) {
+            std::cout << "Loading fuel model: " << fuel_file << std::endl;
+            if (!terrain_loader.loadFuelModel(fuel_file)) {
+                std::cerr << "Failed to load fuel model file" << std::endl;
+                return 1;
+            }
+        }
+        else {
+            std::cout << "Warning: No fuel model specified, using default grass (model 1)" << std::endl;
+        }
+
+        grid_width = terrain_loader.getWidth();
+        grid_height = terrain_loader.getHeight();
+        cell_size = terrain_loader.getCellSize();
     }
 
-    std::cout << "Loading fuel model data..." << std::endl;
-    if (!terrain_loader.loadFuelModel(fuel_file)) {
-        std::cerr << "Failed to load fuel model." << std::endl;
-        return 1;
-    }
-
-    // Calculate slope and aspect from elevation
+    // Calculate slope and aspect
     terrain_loader.calculateSlopeAspect();
 
-    int grid_width = terrain_loader.getWidth();
-    int grid_height = terrain_loader.getHeight();
-    float cell_size = terrain_loader.getCellSize();
+    // Apply moisture override if specified
+    if (moisture_override >= 0.0f) {
+        std::cout << "Overriding fuel moisture to " << (moisture_override * 100.0f) << "%" << std::endl;
+        auto& terrain = const_cast<std::vector<TerrainCell>&>(terrain_loader.getTerrain());
+        for (auto& cell : terrain) {
+            if (cell.fuel_model > 0) {
+                cell.fuel_moisture = moisture_override;
+            }
+        }
+    }
 
     // Simulation parameters
-    const float SIM_DURATION = 3600.0f * 24.0f;  // 24 hours
-    const float DT = 1.0f;  // 1 second timestep
+    const float SIM_DURATION = 3600.0f * sim_hours;
+    const float DT = 1.0f;
 
     std::cout << std::endl;
     std::cout << "Simulation Configuration:" << std::endl;
@@ -81,8 +204,8 @@ int main(int argc, char** argv) {
     std::cout << "  Cell resolution: " << cell_size << " m" << std::endl;
     std::cout << "  Domain size: " << (grid_width * cell_size / 1000.0f) << " x "
         << (grid_height * cell_size / 1000.0f) << " km" << std::endl;
-    std::cout << "  Simulation duration: " << (SIM_DURATION / 3600.0f) << " hours" << std::endl;
-    std::cout << "  Total cells: " << (grid_width * grid_height) << std::endl;
+    std::cout << "  Simulation duration: " << sim_hours << " hours" << std::endl;
+    std::cout << "  Wind: " << wind_speed << " m/s from " << wind_dir << " degrees" << std::endl;
     std::cout << std::endl;
 
     // Initialize simulation
@@ -93,25 +216,32 @@ int main(int argc, char** argv) {
     // Upload terrain to GPU
     uploadTerrain(&grid, terrain_loader.getTerrain().data());
 
-    // Set wind conditions - Dixie Fire had variable winds, using average
-    // Northeast wind pushing fire southwest initially
-    WindField wind_field = { 8.0f, 45.0f };  // 8 m/s from northeast
+    // Set wind conditions
+    WindField wind_field = { wind_speed, wind_dir };
     cudaMemcpy(grid.d_wind, &wind_field, sizeof(WindField), cudaMemcpyHostToDevice);
-    std::cout << "Wind: " << wind_field.speed << " m/s from " << wind_field.direction << " degrees" << std::endl;
 
-    // Dixie Fire ignition point - near Cresta Dam
-    // Coordinates: 39.9075°N, 121.4347°W
-    // Convert to grid coordinates
-    double ignition_lat = 39.9075;
-    double ignition_lon = -121.4347;
-    int ignition_x, ignition_y;
-    terrain_loader.getCellCoords(ignition_lon, ignition_lat, ignition_x, ignition_y);
+    // Determine ignition point
+    int ign_x, ign_y;
+    if (ignition_cell_x >= 0 && ignition_cell_y >= 0) {
+        // Use cell coordinates directly
+        ign_x = ignition_cell_x;
+        ign_y = ignition_cell_y;
+    }
+    else if (ignition_from_coords) {
+        // Convert lat/lon to cell coordinates
+        terrain_loader.getCellCoords(ignition_lon, ignition_lat, ign_x, ign_y);
+        std::cout << "Ignition coordinates: (" << ignition_lon << ", " << ignition_lat << ")" << std::endl;
+    }
+    else {
+        // Default: center of domain
+        ign_x = grid_width / 2;
+        ign_y = grid_height / 2;
+    }
 
-    std::cout << "Ignition point: (" << ignition_lon << ", " << ignition_lat << ")" << std::endl;
-    std::cout << "  Grid coords: (" << ignition_x << ", " << ignition_y << ")" << std::endl;
+    std::cout << "Ignition cell: (" << ign_x << ", " << ign_y << ")" << std::endl;
 
-    std::vector<int> ignition_xs = { ignition_x };
-    std::vector<int> ignition_ys = { ignition_y };
+    std::vector<int> ignition_xs = { ign_x };
+    std::vector<int> ignition_ys = { ign_y };
     ignitePoints(&grid, ignition_xs.data(), ignition_ys.data(),
         static_cast<int>(ignition_xs.size()), 0.0f);
 
