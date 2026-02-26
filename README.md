@@ -10,7 +10,7 @@ A GPU-accelerated wildfire spread simulator using CUDA and the Rothermel fire sp
 ![C++](https://img.shields.io/badge/C++-17-blue.svg)
 ![Platform](https://img.shields.io/badge/Platform-Windows-lightgrey.svg)
 
-([slideshow + video demo])(https://docs.google.com/presentation/d/1WCsvc8KwYqlWda7qSRX8m6OD9evagoQ5LCFSYURKPXo/edit?usp=sharing)
+[slide deck & video demo](https://docs.google.com/presentation/d/1WCsvc8KwYqlWda7qSRX8m6OD9evagoQ5LCFSYURKPXo/edit?usp=sharing)
 
 ## Features
 
